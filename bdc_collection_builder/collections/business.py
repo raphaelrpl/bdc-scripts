@@ -196,7 +196,7 @@ class RadcorBusiness:
                 productdir = resource_path.join(base_dir, '{}/'.format(yyyymm))
 
                 activity = dict(
-                    collection_id='S2TOA',
+                    collection_id='S2SR_SEN28',
                     activity_type='downloadS2',
                     tags=args.get('tags', []),
                     sceneid=sceneid,
@@ -214,9 +214,7 @@ class RadcorBusiness:
                     logging.warning('radcor - activity already done {}'.format(sceneid))
                     continue
 
-                RadcorBusiness.create_tile('MGRS', scene.get('pathrow', scene.get('tileid')), 'S2TOA', engine=db)
                 RadcorBusiness.create_tile('MGRS', scene.get('pathrow', scene.get('tileid')), 'S2SR_SEN28', engine=db)
-                RadcorBusiness.create_tile('MGRS', scene.get('pathrow', scene.get('tileid')), 'S2SR_SEN28', engine=db_aws)
                 scene['status'] = 'NOTDONE'
 
                 scenes[id] = scene

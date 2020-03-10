@@ -85,8 +85,6 @@ class SentinelTask(RadcorTask):
         Returns:
             dict Scene with sentinel file path
         """
-        scene['collection_id'] = 'S2TOA'
-
         # Create/update activity
         activity_history = self.create_execution(scene)
 
