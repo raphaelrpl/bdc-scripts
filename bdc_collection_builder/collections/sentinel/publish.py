@@ -14,6 +14,7 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
+from shutil import rmtree
 # 3rdparty
 import gdal
 import numpy
@@ -95,16 +96,15 @@ def publish(collection_item: CollectionItem, scene: RadcorActivity):
     year_month_part = safe_filename.split('_')[2]
     yyyymm = '{}-{}'.format(year_month_part[:4], year_month_part[4:6])
 
-    product_uri = '/Repository/Archive/{}/{}/{}'.format(
+    product_uri = '{}/{}/{}'.format(
         scene.collection_id, yyyymm, safe_filename)
 
-    productdir = os.path.join(Config.DATA_DIR, product_uri[1:])
+    productdir = (Path(Config.DATA_DIR) / '/Repository/Archive/') / product_uri[1:]
 
-    if not os.path.exists(productdir):
-        os.makedirs(productdir)
+    productdir.parent.mkdir(exist_ok=True, parents=True)
 
     # Create vegetation index
-    generate_vi(file_basename, productdir, files)
+    generate_vi(file_basename, str(productdir), files)
 
     bands.append('NDVI')
     bands.append('EVI')
@@ -118,10 +118,10 @@ def publish(collection_item: CollectionItem, scene: RadcorActivity):
 
         # Set destination of COG file
         cog_file_name = '{}_{}.tif'.format(file_basename, sband)
-        cog_file_path = os.path.join(productdir, cog_file_name)
+        cog_file_path = Path(productdir) / cog_file_name
 
-        files[band] = generate_cogs(file, cog_file_path)
-        if not is_valid_tif(cog_file_path):
+        files[band] = generate_cogs(file, str(cog_file_path))
+        if not is_valid_tif(str(cog_file_path)):
             raise RuntimeError('Not Valid {}'.format(cog_file_path))
 
     source = scene.sceneid.split('_')[0]
@@ -138,10 +138,7 @@ def publish(collection_item: CollectionItem, scene: RadcorActivity):
         if collection_item.collection_id == 'S2TOA' and instance == 'aws':
             continue
 
-        if instance == 'aws':
-            asset_url = product_uri.replace('/Repository/Archive', Config.AWS_BUCKET_NAME)
-        else:
-            asset_url = product_uri
+        asset_url = product_uri
 
         collection_bands = engine.session.query(Band).filter(Band.collection_id == scene.collection_id).all()
 
@@ -214,7 +211,14 @@ def publish(collection_item: CollectionItem, scene: RadcorActivity):
                     c_item.quicklook = normalized_quicklook_path
                     add_instance(engine, c_item)
 
+                # Send to bucket
+
+
         commit(engine)
+
+    # Remove L1C.SAFE, L2A.SAFE
+    rmtree(productdir, ignore_errors=True)
+    rmtree(scene.args.get('file', ''), ignore_errors=True)
 
     return assets_to_upload
 
