@@ -214,9 +214,8 @@ class RadcorBusiness:
                     logging.warning('radcor - activity already done {}'.format(sceneid))
                     continue
 
-                RadcorBusiness.create_tile('MGRS', scene.get('pathrow', scene.get('tileid')), 'S2TOA', engine=db)
                 RadcorBusiness.create_tile('MGRS', scene.get('pathrow', scene.get('tileid')), 'S2SR_SEN28', engine=db)
-                RadcorBusiness.create_tile('MGRS', scene.get('pathrow', scene.get('tileid')), 'S2SR_SEN28', engine=db_aws)
+
                 scene['status'] = 'NOTDONE'
 
                 scenes[id] = scene

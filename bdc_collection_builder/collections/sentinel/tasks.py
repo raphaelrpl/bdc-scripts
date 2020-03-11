@@ -171,6 +171,8 @@ class SentinelTask(RadcorTask):
 
         activity_args.pop('link')
         scene['args'] = activity_args
+        scene['args']['extracted'] = extracted_file_path
+        scene['args']['compressed_file'] = zip_file_name
 
         # Create new activity 'correctionS2' to continue task chain
         scene['activity_type'] = 'correctionS2'
@@ -232,45 +234,24 @@ class SentinelTask(RadcorTask):
         ))
 
         try:
-            assets = publish(self.get_collection_item(activity_history.activity), activity_history.activity)
+            publish(self.get_collection_item(activity_history.activity), activity_history.activity)
         except InvalidRequestError as e:
-            # Error related with Transacion on AWS
+            # Error related with Transaction on AWS
             # TODO: Is it occurs on local instance?
             logging.error("Transaction Error on activity - {}".format(activity_history.activity_id), exc_info=True)
 
-            db_aws.session.rollback()
+            db.session.rollback()
 
             raise e
         except BaseException as e:
-            logging.error('An error occurred during task execution - {}'.format(activity_history.activity_id), exc_info=True)
+            logging.error('An error occurred during task execution - {}'.format(activity_history.activity_id),
+                          exc_info=True)
             raise e
 
         # Create new activity 'uploadS2' to continue task chain
         scene['activity_type'] = 'uploadS2'
-        scene['args']['assets'] = assets
 
         logging.debug('Done Publish Sentinel.')
-
-        return scene
-
-    def upload(self, scene):
-        """Upload collection to AWS.
-
-        Make sure to set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and
-        `AWS_REGION_NAME` defined in `bdc_collection_builder.config.Config`.
-
-        Args:
-            scene - Serialized Activity
-        """
-        # Create/update activity
-        self.create_execution(scene)
-
-        assets = scene['args']['assets']
-
-        for entry in assets.values():
-            file_without_prefix = entry['asset'].replace('{}/'.format(Config.AWS_BUCKET_NAME), '')
-            logging.warning('Uploading {} to BUCKET {} - {}'.format(entry['file'], Config.AWS_BUCKET_NAME, file_without_prefix))
-            upload_file(entry['file'], Config.AWS_BUCKET_NAME, file_without_prefix)
 
 
 # TODO: Sometimes, copernicus reject the connection even using only 2 concurrent connection

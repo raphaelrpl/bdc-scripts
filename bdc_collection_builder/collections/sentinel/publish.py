@@ -14,19 +14,21 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
+from shutil import rmtree
 # 3rdparty
 import gdal
 import numpy
 from numpngw import write_png
 from skimage.transform import resize
 # Builder
-from bdc_db.models import db, Asset, Band, CollectionItem, CollectionTile
+from bdc_db.models import db, Asset, Band, CollectionItem
 from bdc_collection_builder.config import Config
-from bdc_collection_builder.db import add_instance, commit, db_aws
+from bdc_collection_builder.db import add_instance, commit
 from bdc_collection_builder.collections.forms import CollectionItemForm
 from bdc_collection_builder.collections.utils import get_or_create_model, generate_cogs, generate_evi_ndvi, is_valid_tif
 from bdc_collection_builder.collections.models import RadcorActivity
 from .utils import get_jp2_files
+from ..utils import upload_file
 
 
 BAND_MAP = {
@@ -95,16 +97,14 @@ def publish(collection_item: CollectionItem, scene: RadcorActivity):
     year_month_part = safe_filename.split('_')[2]
     yyyymm = '{}-{}'.format(year_month_part[:4], year_month_part[4:6])
 
-    product_uri = '/Repository/Archive/{}/{}/{}'.format(
-        scene.collection_id, yyyymm, safe_filename)
+    product_uri = '{}/{}/{}'.format(scene.collection_id, yyyymm, safe_filename)
 
-    productdir = os.path.join(Config.DATA_DIR, product_uri[1:])
+    productdir = (Path(Config.DATA_DIR) / '/Repository/Archive/') / product_uri[1:]
 
-    if not os.path.exists(productdir):
-        os.makedirs(productdir)
+    productdir.parent.mkdir(exist_ok=True, parents=True)
 
     # Create vegetation index
-    generate_vi(file_basename, productdir, files)
+    generate_vi(file_basename, str(productdir), files)
 
     bands.append('NDVI')
     bands.append('EVI')
@@ -118,20 +118,17 @@ def publish(collection_item: CollectionItem, scene: RadcorActivity):
 
         # Set destination of COG file
         cog_file_name = '{}_{}.tif'.format(file_basename, sband)
-        cog_file_path = os.path.join(productdir, cog_file_name)
+        cog_file_path = Path(productdir) / cog_file_name
 
         files[band] = generate_cogs(file, cog_file_path)
-        if not is_valid_tif(cog_file_path):
+        if not is_valid_tif(str(cog_file_path)):
             raise RuntimeError('Not Valid {}'.format(cog_file_path))
 
     source = scene.sceneid.split('_')[0]
 
-    assets_to_upload = {}
-
-    for instance in ['local', 'aws']:
+    for instance in ['aws']:
         engine_instance = {
-            'local': db,
-            'aws': db_aws
+            'aws': db
         }
         engine = engine_instance[instance]
 
@@ -139,10 +136,7 @@ def publish(collection_item: CollectionItem, scene: RadcorActivity):
         if collection_item.collection_id == 'S2TOA' and instance == 'aws':
             continue
 
-        if instance == 'aws':
-            asset_url = product_uri.replace('/Repository/Archive', Config.AWS_BUCKET_NAME)
-        else:
-            asset_url = product_uri
+        asset_url = '{}/{}'.format(Config.AWS_BUCKET_NAME, product_uri)
 
         collection_bands = engine.session.query(Band).filter(Band.collection_id == scene.collection_id).all()
 
@@ -196,7 +190,7 @@ def publish(collection_item: CollectionItem, scene: RadcorActivity):
                         collection_item_id=collection_item.id,
                     )
 
-                    assets_to_upload[sband] = (dict(file=cog_file_path, asset=asset.url))
+                    upload_file('{}/{}'.format(product_uri, cog_file_name), bucket=Config.AWS_BUCKET_NAME)
 
                     del asset_dataset
 
@@ -206,7 +200,8 @@ def publish(collection_item: CollectionItem, scene: RadcorActivity):
                     create_qlook_file(pngname, files['qlfile'])
 
                 normalized_quicklook_path = os.path.normpath('{}/{}'.format(asset_url, os.path.basename(pngname)))
-                assets_to_upload['quicklook'] = dict(asset=normalized_quicklook_path, file=pngname)
+
+                upload_file('{}/{}'.format(product_uri, os.path.basename(pngname)), bucket=Config.AWS_BUCKET_NAME)
 
                 c_item = engine.session.query(CollectionItem).filter(
                     CollectionItem.id == collection_item.id
@@ -217,7 +212,19 @@ def publish(collection_item: CollectionItem, scene: RadcorActivity):
 
         commit(engine)
 
-    return assets_to_upload
+    # Upload compressed file
+    compressed_file = scene.args.get('compressed_file')
+    compressed_file_destination = 'S2TOA/{}/{}'.format(yyyymm, os.path.basename(compressed_file))
+    upload_file(compressed_file, Config.AWS_BUCKET_NAME, compressed_file_destination)
+
+    # Remove Extracted Safe, Correction SAFE, COG Dir and compressed file
+    rmtree(scene.args.get('extracted'), ignore_errors=True)
+    os.remove(compressed_file)
+    rmtree(scene.args.get('file'), ignore_errors=True)
+    rmtree(str(productdir))
+    logging.warning('Removing files {}, {}, {}'.format(scene.args.get('extracted'),
+                                                       scene.args.get('file'),
+                                                       str(productdir)))
 
 
 def create_qlook_file(pngname, qlfile):

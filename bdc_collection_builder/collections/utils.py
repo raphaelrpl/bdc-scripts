@@ -81,16 +81,11 @@ def dispatch(activity: dict):
         if collection_sr is None:
             raise RuntimeError('The collection "S2SR_SEN28" not found')
 
-        # Raw chain represents TOA publish chain
-        raw_data_chain = sentinel_tasks.publish_sentinel.s()
-
         atm_chain = sentinel_tasks.atm_correction.s() | sentinel_tasks.publish_sentinel.s() | \
             sentinel_tasks.upload_sentinel.s()
 
         task_chain = sentinel_tasks.download_sentinel.s(activity) | \
             group([
-                # Publish raw data
-                raw_data_chain,
                 # ATM Correction
                 atm_chain
             ])

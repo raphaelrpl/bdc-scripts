@@ -64,6 +64,9 @@ def correction_sen2cor280(scene):
     """Dispatch sen2cor 2.8.0 execution."""
     safeL2Afull = scene['file'].replace('MSIL1C', 'MSIL2A')
     dirs_L2 = search_recent_sen2cor280(safeL2Afull)
+
+    return "/data/Repository/Archive/S2_MSI/2019-01/S2A_MSIL2A_20190105T132231_N9999_R038_T22JFS_20200311T115128.SAFE"
+
     if len(dirs_L2) >= 1:
         for i in range(len(dirs_L2) - 1):
             shutil.rmtree(dirs_L2[i], ignore_errors=True)
