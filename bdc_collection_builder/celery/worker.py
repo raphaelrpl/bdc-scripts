@@ -19,7 +19,7 @@ from bdc_collection_builder.celery import create_celery_app
 
 app = create_app()
 celery = create_celery_app(app)
-
+print('here')
 
 @worker_shutdown.connect
 def on_shutdown_release_locks(sender, **kwargs):

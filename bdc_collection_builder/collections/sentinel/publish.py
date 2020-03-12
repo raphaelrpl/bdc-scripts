@@ -99,9 +99,11 @@ def publish(collection_item: CollectionItem, scene: RadcorActivity):
 
     product_uri = '{}/{}/{}'.format(scene.collection_id, yyyymm, safe_filename)
 
-    productdir = (Path(Config.DATA_DIR) / '/Repository/Archive/') / product_uri[1:]
+    productdir = (Path(Config.DATA_DIR) / 'Repository/Archive/') / product_uri
 
-    productdir.parent.mkdir(exist_ok=True, parents=True)
+    logging.warning('{}, {}'.format(str(productdir), product_uri))
+
+    productdir.mkdir(exist_ok=True, parents=True)
 
     # Create vegetation index
     generate_vi(file_basename, str(productdir), files)
@@ -120,7 +122,7 @@ def publish(collection_item: CollectionItem, scene: RadcorActivity):
         cog_file_name = '{}_{}.tif'.format(file_basename, sband)
         cog_file_path = Path(productdir) / cog_file_name
 
-        files[band] = generate_cogs(file, cog_file_path)
+        files[band] = generate_cogs(file, str(cog_file_path))
         if not is_valid_tif(str(cog_file_path)):
             raise RuntimeError('Not Valid {}'.format(cog_file_path))
 
@@ -240,6 +242,7 @@ def create_qlook_file(pngname, qlfile):
 def generate_vi(identifier, productdir, files):
     """Prepare and generate Vegetation Index of Sentinel Products."""
     ndvi_name = os.path.join(productdir, identifier+"_NDVI.tif")
+    logging.warning('NDVI {}'.format(ndvi_name))
     evi_name = os.path.join(productdir, identifier+"_EVI.tif")
     files['ndvi'] = ndvi_name
     files['evi'] = evi_name
