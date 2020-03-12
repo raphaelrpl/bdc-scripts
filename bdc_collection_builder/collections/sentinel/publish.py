@@ -99,9 +99,9 @@ def publish(collection_item: CollectionItem, scene: RadcorActivity):
 
     product_uri = '{}/{}/{}'.format(scene.collection_id, yyyymm, safe_filename)
 
-    productdir = (Path(Config.DATA_DIR) / 'Repository/Archive/') / product_uri
+    data_relative_dir = Path(Config.DATA_DIR) / 'Repository/Archive/'
 
-    logging.warning('{}, {}'.format(str(productdir), product_uri))
+    productdir = data_relative_dir / product_uri
 
     productdir.mkdir(exist_ok=True, parents=True)
 
@@ -192,7 +192,10 @@ def publish(collection_item: CollectionItem, scene: RadcorActivity):
                         collection_item_id=collection_item.id,
                     )
 
-                    upload_file('{}/{}'.format(product_uri, cog_file_name), bucket=Config.AWS_BUCKET_NAME)
+                    remote_asset_path = str(Path(product_uri) / cog_file_name)
+                    absolute_asset_path = str(productdir / cog_file_name)
+                    logging.warning('Sending {} to {}'.format(absolute_asset_path, remote_asset_path))
+                    upload_file(absolute_asset_path, bucket=Config.AWS_BUCKET_NAME, object_name=remote_asset_path)
 
                     del asset_dataset
 
@@ -203,7 +206,9 @@ def publish(collection_item: CollectionItem, scene: RadcorActivity):
 
                 normalized_quicklook_path = os.path.normpath('{}/{}'.format(asset_url, os.path.basename(pngname)))
 
-                upload_file('{}/{}'.format(product_uri, os.path.basename(pngname)), bucket=Config.AWS_BUCKET_NAME)
+                remote_quicklook_path = str(Path(product_uri) / '{}.png'.format(file_basename))
+
+                upload_file(pngname, object_name=remote_quicklook_path, bucket=Config.AWS_BUCKET_NAME)
 
                 c_item = engine.session.query(CollectionItem).filter(
                     CollectionItem.id == collection_item.id
