@@ -113,7 +113,7 @@ class LandsatTask(RadcorTask):
 
                 # When file does not exist, use USGS
                 if not digital_number_file.exists():
-                    logging.info('Download Lansat {} from USGS...'.format(scene_id))
+                    logging.info('Download Landsat {} from USGS...'.format(scene_id))
                     file = download_landsat_images(activity_args['link'], productdir)
                     activity_args['provider'] = activity_args['link']
             else:

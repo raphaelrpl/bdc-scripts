@@ -74,7 +74,7 @@ class OndaResult(dict):
 
         req = requests.get(base_uri.format(product_id), stream=True, timeout=90, auth=auth)
 
-        destination = Path(str(destination)) / '{}.zip'.format(self.scene_id)
+        destination = Path(str(destination))
 
         req.raise_for_status()
 
@@ -135,7 +135,7 @@ def search_onda_catalog_by_scene_id(scene_id: str) -> OndaResult:
     return OndaResult(**results['value'][0])
 
 
-def download_from_onda(scene_id: str, destination: str):
+def download_from_onda(scene_id: str, destination: str, **kwargs):
     """Download Sentinel 2 from ONDA <https://catalogue.onda-dias.eu/catalogue/>."""
     catalog = search_onda_catalog_by_scene_id(scene_id)
 
@@ -146,3 +146,11 @@ def download_from_onda(scene_id: str, destination: str):
     catalog.order()
 
     catalog.download(destination)
+
+
+class ONDAProvider:
+    def name(self):
+        return 'ONDA'
+
+    def __call__(self, scene_id: str, destination: str, **kwargs):
+        download_from_onda(scene_id, destination, **kwargs)

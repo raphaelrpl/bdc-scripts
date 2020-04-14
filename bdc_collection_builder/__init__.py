@@ -46,6 +46,10 @@ def create_app(config_name='DevelopmentConfig'):
         from bdc_collection_builder.blueprint import bp
         app.register_blueprint(bp)
 
+        # Factories
+        from .collections.sentinel.download_factory import factory
+        factory.initialize()
+
     return app
 
 

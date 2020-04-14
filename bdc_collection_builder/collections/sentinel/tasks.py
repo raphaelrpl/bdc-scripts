@@ -23,11 +23,9 @@ from ...config import Config
 from ...db import db_aws
 from ..base_task import RadcorTask
 from ..utils import extractall, is_valid, upload_file
-from .clients import sentinel_clients
-from .download import download_sentinel_images, download_sentinel_from_creodias
+from .download_factory import factory as download_factory
 from .publish import publish
 from .correction import correction_sen2cor255, correction_sen2cor280
-from .onda import download_from_onda
 
 
 lock = lock_handler.lock('sentinel_download_lock_4')
@@ -35,35 +33,6 @@ lock = lock_handler.lock('sentinel_download_lock_4')
 
 class SentinelTask(RadcorTask):
     """Define abstraction of Sentinel 2 - L1C and L2A products."""
-
-    def get_user(self):
-        """Try to get an iddle user to download images.
-
-        Since we are downloading images from Copernicus, you can only have
-        two concurrent download per account. In this way, we should handle the
-        access to the stack of SciHub accounts defined in `secrets_s2.json`
-        in order to avoid download interrupt.
-
-        Returns:
-            AtomicUser An atomic user
-        """
-        user = None
-
-        while lock.locked():
-            logging.info('Resource locked....')
-            time.sleep(1)
-
-        lock.acquire(blocking=True)
-        while user is None:
-            user = sentinel_clients.use()
-
-            if user is None:
-                logging.info('Waiting for available user to download...')
-                time.sleep(5)
-
-        lock.release()
-
-        return user
 
     def get_tile_id(self, scene_id, **kwargs):
         """Retrieve tile from sceneid."""
@@ -120,24 +89,8 @@ class SentinelTask(RadcorTask):
                     valid = is_valid(zip_file_name)
 
                 if not os.path.exists(zip_file_name) or not valid:
-                    try:
-                        # Acquire User to download
-                        with self.get_user() as user:
-                            logging.info('Starting Download {} - {}...'.format(scene_id, user.username))
-                            # Download from Copernicus
-                            download_sentinel_images(link, zip_file_name, user)
-                    except (ConnectionError, HTTPError) as e:
-                        try:
-                            logging.warning('Trying to download "{}" from ONDA...'.format(scene_id))
-
-                            download_from_onda(scene_id, os.path.dirname(zip_file_name))
-                        except:
-                            try:
-                                logging.warning('Trying download {} from CREODIAS...'.format(scene_id))
-                                download_sentinel_from_creodias(scene_id, zip_file_name)
-                            except:
-                                # Ignore errors from external provider
-                                raise e
+                    # Download from Well-Known providers
+                    download_factory.download(scene_id, zip_file_name, link=link)
 
                     # Check if file is valid
                     valid = is_valid(zip_file_name)

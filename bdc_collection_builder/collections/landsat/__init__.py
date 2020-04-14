@@ -6,4 +6,4 @@
 # under the terms of the MIT License; see LICENSE file for more details.
 #
 
-"""Define module for handling Sentinel Data Processing."""
+"""Define module for handling Landsat 8 Data Processing."""
