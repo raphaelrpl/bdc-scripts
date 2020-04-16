@@ -1,20 +1,19 @@
 """Describes the Celery Tasks definition of Sentinel products."""
 
 # Python Native
-from datetime import datetime
-from urllib3.exceptions import NewConnectionError, MaxRetryError
-from zipfile import ZipFile
 import logging
 import os
 import time
+from datetime import datetime
+from distutils.util import strtobool
+from urllib3.exceptions import NewConnectionError, MaxRetryError
+from zipfile import ZipFile
 
 # 3rdparty
+from bdc_db.models import db
 from botocore.exceptions import EndpointConnectionError
 from requests.exceptions import ConnectionError, HTTPError
 from sqlalchemy.exc import InvalidRequestError
-
-# BDC DB
-from bdc_db.models import db
 
 # Builder
 from ...celery import celery_app
@@ -120,6 +119,10 @@ class SentinelTask(RadcorTask):
                     valid = is_valid(zip_file_name)
 
                 if not os.path.exists(zip_file_name) or not valid:
+                    # Flag to download from CREODIAS when not found on others providers. Default is False
+                    use_creodias = strtobool(str(activity_args.get('use_creodias', False)))
+                    provider_uri = link
+
                     try:
                         # Acquire User to download
                         with self.get_user() as user:
@@ -130,17 +133,21 @@ class SentinelTask(RadcorTask):
                         try:
                             logging.warning('Trying to download "{}" from ONDA...'.format(scene_id))
 
-                            download_from_onda(scene_id, os.path.dirname(zip_file_name))
+                            provider_uri = download_from_onda(scene_id, os.path.dirname(zip_file_name))
                         except:
+                            if not use_creodias:
+                                raise e
+
                             try:
                                 logging.warning('Trying download {} from CREODIAS...'.format(scene_id))
-                                download_sentinel_from_creodias(scene_id, zip_file_name)
+                                provider_uri = download_sentinel_from_creodias(scene_id, zip_file_name)
                             except:
                                 # Ignore errors from external provider
                                 raise e
-
                     # Check if file is valid
                     valid = is_valid(zip_file_name)
+
+                    activity_args['provider'] = provider_uri
 
                 if not valid:
                     raise IOError('Invalid zip file "{}"'.format(zip_file_name))

@@ -33,19 +33,24 @@ class OndaResult(dict):
     password: str = None
 
     @property
-    def id(self):
+    def id(self) -> str:
         """Retrieve ProductId of ONDA Result."""
         return self['id']
 
     @property
-    def offline(self):
+    def offline(self) -> str:
         """Retrieve metadata to identify downloadable scene."""
         return self['offline']
 
     @property
-    def scene_id(self):
+    def scene_id(self) -> str:
         """Retrieve scene_id from ONDA Result."""
         return self['name'].split('.')[0]
+
+    @property
+    def uri(self) -> str:
+        """Retrieve download URI."""
+        return 'https://catalogue.onda-dias.eu/dias-catalogue/Products({})/$value'.format(self.id)
 
     def set_credentials(self, username, password):
         """Set credentials used to order a scene."""
@@ -66,13 +71,9 @@ class OndaResult(dict):
 
         from bdc_collection_builder.collections.sentinel.download import _download
 
-        base_uri = 'https://catalogue.onda-dias.eu/dias-catalogue/Products({})/$value'
-
-        product_id = self.id
-
         auth = self.username, self.password
 
-        req = requests.get(base_uri.format(product_id), stream=True, timeout=90, auth=auth)
+        req = requests.get(self.uri, stream=True, timeout=90, auth=auth)
 
         destination = Path(str(destination)) / '{}.zip'.format(self.scene_id)
 
@@ -146,3 +147,5 @@ def download_from_onda(scene_id: str, destination: str):
     catalog.order()
 
     catalog.download(destination)
+
+    return catalog.uri

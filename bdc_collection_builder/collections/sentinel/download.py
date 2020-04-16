@@ -120,3 +120,5 @@ def download_sentinel_from_creodias(scene_id: str, file_path: str):
             raise RuntimeError('Could not download {} - {}'.format(response.status_code, scene_id))
 
         _download(file_path, response)
+
+        return link

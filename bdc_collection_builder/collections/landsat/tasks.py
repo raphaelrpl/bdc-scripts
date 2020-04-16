@@ -19,6 +19,7 @@ from distutils.util import strtobool
 from botocore.exceptions import EndpointConnectionError
 from glob import glob as resource_glob
 from requests import get as resource_get
+from requests.exceptions import ConnectionError, HTTPError
 from sqlalchemy.exc import InvalidRequestError
 from urllib3.exceptions import NewConnectionError, MaxRetryError
 # Builder
@@ -298,7 +299,7 @@ class LandsatTask(RadcorTask):
 @celery_app.task(base=LandsatTask,
                  queue='download',
                  max_retries=72,
-                 autoretry_for=(NewConnectionError, MaxRetryError),
+                 autoretry_for=(HTTPError, MaxRetryError, NewConnectionError, ConnectionError),
                  default_retry_delay=Config.TASK_RETRY_DELAY)
 def download_landsat(scene):
     """Represent a celery task definition for handling Landsat-8 Download files.
