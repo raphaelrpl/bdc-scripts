@@ -47,7 +47,7 @@ def create_app(config_name='DevelopmentConfig'):
         app.register_blueprint(bp)
 
         # Factories
-        from .collections.sentinel.download_factory import factory
+        from .collections.download_factory import factory
         factory.initialize()
 
     return app
