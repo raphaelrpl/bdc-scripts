@@ -23,7 +23,7 @@ from ...config import Config
 from ...db import db_aws
 from ..base_task import RadcorTask
 from ..utils import extractall, is_valid, upload_file
-from .download_factory import factory as download_factory
+from ..download_factory import factory as download_factory
 from .publish import publish
 from .correction import correction_sen2cor255, correction_sen2cor280
 
