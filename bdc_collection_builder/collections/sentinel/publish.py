@@ -16,7 +16,7 @@ import fnmatch
 import logging
 import os
 # 3rdparty
-import gdal
+from osgeo import gdal
 import numpy
 from numpngw import write_png
 from skimage.transform import resize

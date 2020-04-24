@@ -11,7 +11,7 @@
 
 # 3rdparty
 from marshmallow import Schema, fields
-from marshmallow_sqlalchemy import ModelSchema
+from marshmallow_sqlalchemy import SQLAlchemyAutoSchema
 from bdc_db.models import db, CollectionItem
 # Builder
 from .models import RadcorActivity, RadcorActivityHistory
@@ -27,7 +27,7 @@ class TaskSchema(Schema):
     traceback = fields.Str()
 
 
-class CollectionItemForm(ModelSchema):
+class CollectionItemForm(SQLAlchemyAutoSchema):
     """Define schema for Collection Item."""
 
     collection_id = fields.String()
@@ -42,7 +42,7 @@ class CollectionItemForm(ModelSchema):
         exclude = ('grs_schema', 'cube_collection', 'tile')
 
 
-class HistoryForm(ModelSchema):
+class HistoryForm(SQLAlchemyAutoSchema):
     """Define schema for task execution history."""
 
     status = fields.Method('dump_status')
@@ -66,7 +66,7 @@ class HistoryForm(ModelSchema):
         exclude = ('activity', )
 
 
-class SimpleActivityForm(ModelSchema):
+class SimpleActivityForm(SQLAlchemyAutoSchema):
     """Define schema for Brazil Data Cube Collection Builder Activity."""
 
     collection_id = fields.Str()
