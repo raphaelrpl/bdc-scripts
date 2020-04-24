@@ -11,14 +11,24 @@
 # Python Native
 import logging
 # 3rdparty
-from celery.signals import worker_shutdown
+from celery.signals import celeryd_after_setup, worker_shutdown
 # Builder
 from bdc_collection_builder import create_app
 from bdc_collection_builder.celery import create_celery_app
+from ..utils import finalize_factories, initialize_factories
 
 
 app = create_app()
 celery = create_celery_app(app)
+
+
+@celeryd_after_setup.connect
+def on_celery_ready(*args, **kwargs):
+    """Signal handler to identify when celery is loaded.
+
+    Tries to initialize Collection Builder factories.
+    """
+    initialize_factories()
 
 
 @worker_shutdown.connect
@@ -27,7 +37,5 @@ def on_shutdown_release_locks(sender, **kwargs):
 
     Tries to release Redis Lock if there is.
     """
-    from bdc_collection_builder.celery.cache import lock_handler
-
     logging.info('Turning off Celery...')
-    lock_handler.release_all()
+    finalize_factories()

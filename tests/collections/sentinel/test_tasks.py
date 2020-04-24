@@ -6,6 +6,15 @@ from requests.exceptions import HTTPError
 # Initialize Celery worker
 import bdc_collection_builder.celery.worker
 from bdc_collection_builder.collections.sentinel.tasks import download_sentinel
+from bdc_collection_builder.utils import initialize_factories, finalize_factories
+
+
+def setup_module():
+    initialize_factories()
+
+
+def teardown_module():
+    finalize_factories()
 
 
 class TestSentinelTasks:
@@ -51,9 +60,10 @@ class TestSentinelTasks:
     # The second test must return False in order to mock as valid zip
     @pytest.mark.parametrize('side_effect', [[False, False]])
     @pytest.mark.parametrize('created', [False])
+    @pytest.mark.parametrize('exists', [True])
     @patch('requests.get')
     @patch('bdc_db.models.base_sql.BaseModel.query')
-    def test_skip_download_zip_exists(self, query_property, mock_download_request, mock_activity_history, mock_zip_sentinel, mock_os_path_exists, mock_get_or_create):
+    def test_skip_download_zip_exists(self, query_property, mock_download_request, mock_activity_history, mock_zip_sentinel, mock_os_path, mock_get_or_create):
         input_args = self.create_activity()
 
         # Mocking 3rdparty
@@ -77,6 +87,7 @@ class TestSentinelTasks:
     # Mocking zip. The first validation must be invalid.
     @pytest.mark.parametrize('created', [False])
     @pytest.mark.parametrize('side_effect', [[True]])
+    # @pytest.mark.parametrize('locked', [False])
     @patch('requests.get')
     @patch('bdc_db.models.base_sql.BaseModel.query')
     def test_download_auto_retry(self, query_property, mock_download_request, mock_activity_history, mock_zip_sentinel, mock_get_or_create):
@@ -95,6 +106,7 @@ class TestSentinelTasks:
 
     @pytest.mark.parametrize('created', [False])
     @pytest.mark.parametrize('side_effect', [[False]])
+    # @pytest.mark.parametrize('locked', [False])
     @patch('requests.get')
     @patch('bdc_db.models.base_sql.BaseModel.query')
     def test_download_from_onda(self, query_property, mock_download_request, mock_activity_history, mock_zip_sentinel, mock_get_or_create, mock_credentials):

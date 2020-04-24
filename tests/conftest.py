@@ -5,6 +5,14 @@ from bdc_collection_builder import create_app
 from bdc_collection_builder.collections.models import RadcorActivityHistory
 
 
+
+DEFAULT_SECRETS = '''{
+    "sentinel": {
+        "user": {"password": "pass", "count": 0}
+    }
+}'''
+
+
 @pytest.fixture(scope='class')
 def app():
     _app = create_app('TestingConfig')
@@ -19,7 +27,20 @@ def app():
 
 @pytest.fixture()
 def mock_redis():
-    pass
+    with patch('redis.Redis.from_url') as mocked:
+        mocked.return_value.get.return_value = DEFAULT_SECRETS
+        yield mocked
+
+
+@pytest.fixture()
+def mock_redis_lock(mock_redis, locked):
+    mock_lock = Mock()
+    mock_lock.locked.return_value = locked
+    mock_lock.acquire.return_value = None
+
+    mock_redis.return_value.lock.return_value = mock_lock
+
+    yield mock_lock
 
 
 @pytest.fixture(scope='class')
@@ -35,8 +56,8 @@ def mock_open():
 
 
 @pytest.fixture()
-def mock_os_path_exists():
-    with patch('os.path.exists', return_value=True) as mocked:
+def mock_os_path(exists):
+    with patch('os.path.exists', return_value=exists) as mocked:
         yield mocked
 
 

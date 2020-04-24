@@ -10,7 +10,7 @@
 
 import requests
 from pathlib import Path
-from ..utils import get_credentials
+from ...utils import get_credentials
 
 
 class OndaResult(dict):

@@ -13,7 +13,21 @@ import redis
 from bdc_collection_builder.config import Config
 
 
-client = redis.Redis.from_url(Config.REDIS_URL)
+class RedisService:
+    """Define an abstraction for Redis interface."""
+    _client = None
+
+    def initialize(self, uri=Config.REDIS_URL):
+        """Initialize a connection with Redis."""
+        self._client = redis.Redis.from_url(Config.REDIS_URL)
+
+    @property
+    def client(self):
+        """Retrieve redis instance."""
+        return self._client
+
+
+redis_service = RedisService()
 
 
 class LockHandler:
@@ -33,7 +47,7 @@ class LockHandler:
             name - Lock name
             **options - Extra optional parameters
         """
-        lock = client.lock(name, **options)
+        lock = redis_service.client.lock(name, **options)
 
         self._locks.append(lock)
 
@@ -44,6 +58,10 @@ class LockHandler:
 
         Release all locks.
         """
+        self.release_all()
+
+    def __del__(self):
+        """Release redis locks on destructor."""
         self.release_all()
 
     def release_all(self):

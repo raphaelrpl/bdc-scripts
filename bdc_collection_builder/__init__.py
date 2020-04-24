@@ -46,6 +46,13 @@ def create_app(config_name='DevelopmentConfig'):
         from bdc_collection_builder.blueprint import bp
         app.register_blueprint(bp)
 
+        from .utils import initialize_factories
+
+        @app.before_first_request
+        def register_factories():
+            """Register Collection Builder factories on first request."""
+            initialize_factories()
+
     return app
 
 

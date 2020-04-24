@@ -32,6 +32,7 @@ from sqlalchemy_utils import refresh_materialized_view
 # Builder
 from ..config import CURRENT_DIR, Config
 from ..db import commit, db_aws
+from ..utils import get_credentials
 from .sentinel.clients import sentinel_clients
 
 
@@ -394,14 +395,6 @@ def extractall(file):
     archive = ZipFile(file, 'r')
     archive.extractall(resource_path.dirname(file))
     archive.close()
-
-
-def get_credentials():
-    """Retrieve global secrets with credentials."""
-    file = resource_path.join(resource_path.dirname(CURRENT_DIR), 'secrets.json')
-
-    with open(file) as f:
-        return json_parser(f.read())
 
 
 def generate_cogs(input_data_set_path, file_path):

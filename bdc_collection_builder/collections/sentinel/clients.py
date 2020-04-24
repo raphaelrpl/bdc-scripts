@@ -11,7 +11,7 @@
 import json
 import logging
 import os
-from bdc_collection_builder.celery.cache import client
+from bdc_collection_builder.celery.cache import redis_service
 from bdc_collection_builder.config import CURRENT_DIR
 
 
@@ -77,33 +77,32 @@ class UserClients:
 
     def __init__(self):
         """Build user clients interface."""
-        self._users = []
+        self._users = None
         self._key = 'bdc_collection_builder:users'
         self._load_from_disk()
 
     def _load_from_disk(self):
-        file = os.path.join(os.path.dirname(CURRENT_DIR), 'secrets.json')
+        from ...utils import get_credentials
 
-        if not os.path.exists(file):
-            raise FileNotFoundError('The file "{}" does not exists'.format(file))
+        data = get_credentials()
 
-        content = open(file, 'r')
+        if 'sentinel' not in data:
+            raise RuntimeError('Invalid secrets.json. Expected key sentinel.')
 
-        data = json.loads(content.read())
+        self._users = data['sentinel']
 
-        assert 'sentinel' in data
-
-        self.users = data['sentinel']
+    def initialize(self):
+        self.users = self._users
 
     @property
     def users(self):
         """Retrieve all users from disk."""
-        return json.loads(client.get(self._key))
+        return json.loads(redis_service.client.get(self._key))
 
     @users.setter
     def users(self, obj):
         """Update users."""
-        client.set(self._key, json.dumps(obj))
+        redis_service.client.set(self._key, json.dumps(obj))
 
     def use(self):
         """Try to lock an atomic user."""

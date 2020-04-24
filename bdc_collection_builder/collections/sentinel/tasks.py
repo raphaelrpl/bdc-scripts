@@ -33,11 +33,17 @@ from .correction import correction_sen2cor255, correction_sen2cor280
 from .onda import download_from_onda
 
 
-lock = lock_handler.lock('sentinel_download_lock_4')
-
-
 class SentinelTask(RadcorTask):
     """Define abstraction of Sentinel 2 - L1C and L2A products."""
+
+    _lock = None
+
+    @property
+    def lock(self):
+        if self._lock is None:
+            self._lock = lock_handler.lock('sentinel_download_lock_4')
+
+        return self._lock
 
     def get_user(self):
         """Try to get an iddle user to download images.
@@ -51,6 +57,8 @@ class SentinelTask(RadcorTask):
             AtomicUser An atomic user
         """
         user = None
+
+        lock = self.lock
 
         while lock.locked():
             logging.info('Resource locked....')
