@@ -5,6 +5,7 @@ from requests.exceptions import HTTPError
 
 # Initialize Celery worker
 import bdc_collection_builder.celery.worker
+from bdc_collection_builder.collections.sentinel.clients import sentinel_clients
 from bdc_collection_builder.collections.sentinel.tasks import download_sentinel
 from bdc_collection_builder.utils import initialize_factories, finalize_factories
 
@@ -134,3 +135,33 @@ class TestSentinelTasks:
 
         assert mock_download_request.call_count == 3
         assert res['args']['file'] == input_args['args']['file']
+
+    @pytest.mark.parametrize('created', [False])
+    @pytest.mark.parametrize('side_effect', [[False]])
+    @patch('bdc_db.models.base_sql.BaseModel.query')
+    @patch('time.sleep')
+    def test_wait_available_user(self, mock_time, query_property, mock_activity_history, mock_zip_sentinel, mock_get_or_create):
+        SECRETS_BUSY_USERS = {
+            "user": {"password": "pass", "count": 2}
+        }
+
+        # Override sentinel clients with busy users
+        sentinel_clients._users = SECRETS_BUSY_USERS
+        sentinel_clients.initialize()
+
+        input_args = self.create_activity()
+
+        # Attaching input sceneid to the mock as property
+        type(mock_activity_history.activity).sceneid = input_args['sceneid']
+
+        # Assuming that when call sleep, raise error
+        mock_time.side_effect = RuntimeError('')
+
+        # Mocking find RadcorActivityHistory
+        query_property.return_value.filter.return_value.first.return_value = mock_activity_history
+
+        with pytest.raises(RuntimeError):
+            download_sentinel(input_args)
+
+        # ensure user is called
+        mock_time.assert_any_call(5)

@@ -46,7 +46,7 @@ class SentinelTask(RadcorTask):
         return self._lock
 
     def get_user(self):
-        """Try to get an iddle user to download images.
+        """Try to get an idle user to download images.
 
         Since we are downloading images from Copernicus, you can only have
         two concurrent download per account. In this way, we should handle the
