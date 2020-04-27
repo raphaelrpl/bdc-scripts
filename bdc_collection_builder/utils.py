@@ -1,3 +1,13 @@
+#
+# This file is part of Brazil Data Cube Collection Builder.
+# Copyright (C) 2019-2020 INPE.
+#
+# Brazil Data Cube Collection Builder is free software; you can redistribute it and/or modify it
+# under the terms of the MIT License; see LICENSE file for more details.
+#
+
+"""Define global functions used in Collection Builder."""
+
 import logging
 from json import loads as json_parser
 from os import path as resource_path
@@ -27,6 +37,7 @@ def initialize_factories():
 
 
 def finalize_factories():
+    """Finalize the Collection Builder factories."""
     from .celery.cache import lock_handler
 
     lock_handler.release_all()
