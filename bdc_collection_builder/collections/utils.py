@@ -579,3 +579,26 @@ def refresh_assets_view(refresh_on_aws=True):
         commit(db)
 
     logging.info('View refreshed.')
+
+
+def compute_collection_stats(asset_path: str) -> dict:
+    """Compute the Image stats like block size and raster limits."""
+    data_set = gdal.Open(str(asset_path))
+
+    if data_set is None:
+        raise FileNotFoundError('Data set {} not found.'.format(str(asset_path)))
+
+    raster_band = data_set.GetRasterBand(1)
+
+    chunk_x, chunk_y = raster_band.GetBlockSize()
+
+    raster_x, raster_y = data_set.RasterXSize, data_set.RasterYSize
+
+    data_set = None
+
+    return dict(
+        chunk_size_x=chunk_x,
+        chunk_size_y=chunk_y,
+        raster_size_x=raster_x,
+        raster_size_y=raster_y,
+    )

@@ -238,7 +238,8 @@ class SentinelTask(RadcorTask):
         ))
 
         try:
-            assets = publish(self.get_collection_item(activity_history.activity), activity_history.activity)
+            item = self.get_collection_item(activity_history.activity)
+            assets = publish(item, activity_history.activity)
         except InvalidRequestError as e:
             # Error related with Transacion on AWS
             # TODO: Is it occurs on local instance?

@@ -25,7 +25,8 @@ from bdc_db.models import db, Asset, Band, CollectionItem, CollectionTile
 from bdc_collection_builder.config import Config
 from bdc_collection_builder.db import add_instance, commit, db_aws
 from bdc_collection_builder.collections.forms import CollectionItemForm
-from bdc_collection_builder.collections.utils import get_or_create_model, generate_cogs, generate_evi_ndvi, is_valid_tif
+from bdc_collection_builder.collections.utils import (
+    compute_collection_stats,get_or_create_model, generate_cogs, generate_evi_ndvi, is_valid_tif)
 from bdc_collection_builder.collections.models import RadcorActivity
 from .utils import get_jp2_files, get_tif_files
 
@@ -187,11 +188,7 @@ def publish(collection_item: CollectionItem, scene: RadcorActivity):
                     cog_file_name = '{}_{}.tif'.format(file_basename, sband)
                     cog_file_path = os.path.join(productdir, cog_file_name)
 
-                    asset_dataset = gdal.Open(cog_file_path)
-
-                    raster_band = asset_dataset.GetRasterBand(1)
-
-                    chunk_x, chunk_y = raster_band.GetBlockSize()
+                    asset_stats = compute_collection_stats(cog_file_path)
 
                     band_model = next(filter(lambda b: b.name == sband, collection_bands), None)
 
@@ -202,12 +199,9 @@ def publish(collection_item: CollectionItem, scene: RadcorActivity):
                     defaults = dict(
                         source=source,
                         url='{}/{}'.format(asset_url, cog_file_name),
-                        raster_size_x=asset_dataset.RasterXSize,
-                        raster_size_y=asset_dataset.RasterYSize,
+                        **asset_stats,
                         raster_size_t=1,
                         chunk_size_t=1,
-                        chunk_size_x=chunk_x,
-                        chunk_size_y=chunk_y
                     )
                     asset, _ = get_or_create_model(
                         Asset,
@@ -222,8 +216,6 @@ def publish(collection_item: CollectionItem, scene: RadcorActivity):
                     asset.url = defaults['url']
 
                     assets_to_upload[sband] = (dict(file=cog_file_path, asset=asset.url))
-
-                    del asset_dataset
 
                 # Create Qlook file
                 pngname = os.path.join(productdir, file_basename + '.png')

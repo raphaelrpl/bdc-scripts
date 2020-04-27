@@ -1,14 +1,16 @@
-from unittest.mock import Mock, PropertyMock, patch, call
+from unittest.mock import MagicMock, Mock, PropertyMock, patch, call, create_autospec
 import pytest
 from celery.exceptions import Retry
 from requests.exceptions import HTTPError
 
 # Initialize Celery worker
+from bdc_db.models import Band
 import bdc_collection_builder.celery.worker
+from bdc_collection_builder.config import Config
 from bdc_collection_builder.collections.sentinel.clients import sentinel_clients
-from bdc_collection_builder.collections.sentinel.tasks import atm_correction, download_sentinel
+from bdc_collection_builder.collections.sentinel.publish import SENTINEL_BANDS
+from bdc_collection_builder.collections.sentinel.tasks import atm_correction, download_sentinel, publish_sentinel
 from bdc_collection_builder.utils import initialize_factories, finalize_factories
-
 
 def setup_module():
     initialize_factories()
@@ -31,9 +33,10 @@ class TestSentinelTasks:
             )
         )
 
-    def _mock_query_activity(scene_id, query_property, mock_activity_history):
+    def _mock_query_activity(scene_id, query_property, mock_activity_history, collection_id='S2TOA'):
         # Attaching input sceneid to the mock as property
         type(mock_activity_history.activity).sceneid = scene_id
+        type(mock_activity_history.activity).collection_id = collection_id
 
         # Mocking find RadcorActivityHistory
         query_property.return_value.filter.return_value.first.return_value = mock_activity_history
@@ -232,3 +235,130 @@ class TestSentinelCorrection:
             atm_correction(activity)
 
         mock_rmtree.assert_called()
+
+
+class TestSentinelPublish:
+    def toa_activity():
+        activity = TestSentinelTasks.create_activity('publishS2')
+        activity['collection_id'] = 'S2TOA'
+        activity['args']['file'] = '/tmp/Repository/Archive/S2_MSI/2000-01/{}.SAFE'.format(activity['sceneid'])
+
+        return activity
+
+    @staticmethod
+    def get_jp2_files():
+        file_name_prefix = 'T00AAA_20000101T000000'
+
+        file_bands = []
+
+        path_prefix = './GRANULE/L1C_T00AAA_A000000_20000101T000000/IMG_DATA'
+
+        for band in SENTINEL_BANDS:
+            file_bands.append('{}_{}.jp2'.format(file_name_prefix, band))
+
+        file_bands.append('{}_TCI.jp2'.format(file_name_prefix))
+
+        return [(path_prefix, [], file_bands)]
+
+    @staticmethod
+    def _mock_data_set(mock_gdal):
+        import numpy
+
+        data_set = MagicMock()
+
+        fake_array = numpy.ones((10980, 10980), dtype=numpy.uint16)
+
+        band_mock = MagicMock()
+        band_mock.ReadAsArray.return_value = fake_array
+        band_mock.GetBlockSize.return_value = 256, 256
+
+        type(data_set).RasterXSize = 10980
+        type(data_set).RasterYSize = 10980
+        data_set.GetRasterBand = MagicMock(return_value=band_mock)
+
+        return data_set
+
+    @staticmethod
+    def _mock_bands(mock_db):
+        bands = []
+        for band in SENTINEL_BANDS:
+            bmock = create_autospec(Band)
+            type(bmock).name = band
+            bands.append(bmock)
+
+        mock_db.session.query.return_value.filter.return_value.all.return_value = bands
+
+        return bands
+
+
+    @pytest.mark.parametrize('created', [False])
+    @patch('bdc_db.models.base_sql.BaseModel.query')
+    @patch('bdc_collection_builder.collections.sentinel.publish.write_png')
+    @patch('bdc_collection_builder.collections.sentinel.publish.db')
+    @patch('bdc_collection_builder.collections.sentinel.publish.gdal')
+    @patch('bdc_collection_builder.collections.utils.gdal')
+    @patch('os.walk')
+    @patch('os.makedirs')
+    def test_publish_toa(self, mock_os_mkdir, mock_os_walk, mock_gdal, mock_gdal_sentinel, mock_db, mock_qlook, query_property, mock_get_or_create, mock_activity_history):
+        activity = TestSentinelPublish.toa_activity()
+        # Mocking Activity Creation
+        TestSentinelTasks._mock_query_activity(activity['sceneid'], query_property, mock_activity_history)
+
+        mock_item, _ = mock_get_or_create.return_value
+
+        type(mock_item).collection_id = activity['collection_id']
+
+        mock_os_walk.return_value = TestSentinelPublish.get_jp2_files()
+        mock_gdal.Open.return_value = TestSentinelPublish._mock_data_set(mock_gdal)
+        mock_gdal.GetDriverByName.return_value = MagicMock()
+        mock_gdal_sentinel.Open.return_value = TestSentinelPublish._mock_data_set(mock_gdal_sentinel)
+
+        TestSentinelPublish._mock_bands(mock_db)
+
+        res = publish_sentinel(activity)
+
+        mock_os_mkdir.assert_called()
+        mock_qlook.assert_called()
+
+        assert res['activity_type'] == 'uploadS2'
+
+        for band, definition in res['args']['assets'].items():
+            prefix = '/Repository/Archive/S2TOA/2000-01/{}.SAFE/T00AAA'.format(activity['sceneid'])
+            if band != 'quicklook':
+                suffix = '_{}.tif'.format(band)
+            else:
+                suffix = '.png'
+
+            expected = '{}{}'.format(prefix, suffix)
+
+            assert definition['asset'] == expected
+            assert definition['file'] == '{}{}'.format(Config.DATA_DIR, expected)
+
+    @pytest.mark.parametrize('created', [False])
+    @patch('bdc_db.models.base_sql.BaseModel.query')
+    @patch('os.makedirs')
+    def test_raise_error_when_file_not_found(self, mock_os_mkdir, query_property, mock_get_or_create, mock_activity_history):
+        activity = TestSentinelPublish.toa_activity()
+        # Mocking Activity Creation
+        TestSentinelTasks._mock_query_activity(activity['sceneid'], query_property, mock_activity_history)
+        # No jp2 found
+        with pytest.raises(FileNotFoundError):
+            publish_sentinel(activity)
+
+    def test_publish_s2sr_sen28(self):
+        assert False
+
+    def test_publish_s2nbar(self):
+        assert False
+
+    def test_retry_publish_on_transaction_error_aws(self):
+        assert False
+
+    def test_refresh_view_sr_when_enabled(self):
+        assert False
+
+    def test_raise_error_when_vegetation_index_invalid(self):
+        assert False
+
+    def test_do_not_publish_invalid_tif(self):
+        assert False
