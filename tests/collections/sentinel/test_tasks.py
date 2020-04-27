@@ -1,4 +1,4 @@
-from unittest.mock import PropertyMock, patch, call
+from unittest.mock import Mock, PropertyMock, patch, call
 import pytest
 from celery.exceptions import Retry
 from requests.exceptions import HTTPError
@@ -107,7 +107,6 @@ class TestSentinelTasks:
 
     @pytest.mark.parametrize('created', [False])
     @pytest.mark.parametrize('side_effect', [[False]])
-    # @pytest.mark.parametrize('locked', [False])
     @patch('requests.get')
     @patch('bdc_db.models.base_sql.BaseModel.query')
     def test_download_from_onda(self, query_property, mock_download_request, mock_activity_history, mock_zip_sentinel, mock_get_or_create, mock_credentials):
@@ -135,6 +134,44 @@ class TestSentinelTasks:
 
         assert mock_download_request.call_count == 3
         assert res['args']['file'] == input_args['args']['file']
+
+    @pytest.mark.parametrize('created', [False])
+    @pytest.mark.parametrize('side_effect', [[False]])
+    @patch('requests.get')
+    @patch('requests.post')
+    @patch('bdc_db.models.base_sql.BaseModel.query')
+    def test_order_download_from_onda(self, query_property, mock_post, mock_get, mock_activity_history, mock_zip_sentinel, mock_get_or_create, mock_credentials):
+        input_args = self.create_activity()
+
+        # Mocking 3rdparty (the 3 request must fail)
+        type(mock_get.return_value).status_code = PropertyMock(side_effect=[202, 200, 400])
+        mock_get.return_value.raise_for_status.side_effect = [
+            Mock(), # ignore search catalogue error
+            HTTPError('Offline')
+        ]
+        type(mock_post.return_value).status_code = 200
+        mock_get.return_value.json.return_value = dict(
+            value=[
+                dict(
+                    id='$fakeId',
+                    offline=True,
+                    name='{}.zip'.format(input_args['sceneid'])
+                )
+            ]
+        )
+        # Attaching input sceneid to the mock as property
+        type(mock_activity_history.activity).sceneid = input_args['sceneid']
+
+        # Mocking find RadcorActivityHistory
+        query_property.return_value.filter.return_value.first.return_value = mock_activity_history
+
+        # When ordering a product from ONDA Catalogue, it requires around
+        # twenty minutes to be Online. In this way, a Retry is scheduled
+        # TODO: Implement a fake restart in order to check if download is called
+        with pytest.raises(HTTPError):
+            download_sentinel(input_args)
+
+        mock_post.assert_called()
 
     @pytest.mark.parametrize('created', [False])
     @pytest.mark.parametrize('side_effect', [[False]])
