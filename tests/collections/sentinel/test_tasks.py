@@ -6,7 +6,7 @@ from requests.exceptions import HTTPError
 # Initialize Celery worker
 import bdc_collection_builder.celery.worker
 from bdc_collection_builder.collections.sentinel.clients import sentinel_clients
-from bdc_collection_builder.collections.sentinel.tasks import download_sentinel
+from bdc_collection_builder.collections.sentinel.tasks import atm_correction, download_sentinel
 from bdc_collection_builder.utils import initialize_factories, finalize_factories
 
 
@@ -20,7 +20,7 @@ def teardown_module():
 
 class TestSentinelTasks:
     @staticmethod
-    def create_activity():
+    def create_activity(activity_type='downloadS2'):
         return dict(
             activity_type='downloadS2',
             collection_id='FakeCollection',
@@ -31,6 +31,14 @@ class TestSentinelTasks:
             )
         )
 
+    def _mock_query_activity(scene_id, query_property, mock_activity_history):
+        # Attaching input sceneid to the mock as property
+        type(mock_activity_history.activity).sceneid = scene_id
+
+        # Mocking find RadcorActivityHistory
+        query_property.return_value.filter.return_value.first.return_value = mock_activity_history
+
+
     @pytest.mark.parametrize('side_effect', [[False, False]])
     @pytest.mark.parametrize('created', [False])
     @patch('requests.get')
@@ -40,12 +48,7 @@ class TestSentinelTasks:
 
         # Mocking 3rdparty
         mock_download_request.return_value.status_code = 200
-
-        # Attaching input sceneid to the mock as property
-        type(mock_activity_history.activity).sceneid = input_args['sceneid']
-
-        # Mocking find RadcorActivityHistory
-        query_property.return_value.filter.return_value.first.return_value = mock_activity_history
+        TestSentinelTasks._mock_query_activity(input_args['sceneid'], query_property, mock_activity_history)
 
         res = download_sentinel(input_args)
 
@@ -69,12 +72,7 @@ class TestSentinelTasks:
 
         # Mocking 3rdparty
         mock_download_request.return_value.status_code = 200
-
-        # Attaching input sceneid to the mock as property
-        type(mock_activity_history.activity).sceneid = input_args['sceneid']
-
-        # Mocking find RadcorActivityHistory
-        query_property.return_value.filter.return_value.first.return_value = mock_activity_history
+        TestSentinelTasks._mock_query_activity(input_args['sceneid'], query_property, mock_activity_history)
 
         res = download_sentinel(input_args)
 
@@ -95,12 +93,7 @@ class TestSentinelTasks:
         input_args = self.create_activity()
         # Mocking 3rdparty
         mock_download_request.return_value.status_code = 202
-
-        # Attaching input sceneid to the mock as property
-        type(mock_activity_history.activity).sceneid = input_args['sceneid']
-
-        # Mocking find RadcorActivityHistory
-        query_property.return_value.filter.return_value.first.return_value = mock_activity_history
+        TestSentinelTasks._mock_query_activity(input_args['sceneid'], query_property, mock_activity_history)
 
         with pytest.raises(HTTPError):
             download_sentinel(input_args)
@@ -124,11 +117,7 @@ class TestSentinelTasks:
                 )
             ]
         )
-        # Attaching input sceneid to the mock as property
-        type(mock_activity_history.activity).sceneid = input_args['sceneid']
-
-        # Mocking find RadcorActivityHistory
-        query_property.return_value.filter.return_value.first.return_value = mock_activity_history
+        TestSentinelTasks._mock_query_activity(input_args['sceneid'], query_property, mock_activity_history)
 
         res = download_sentinel(input_args)
 
@@ -159,11 +148,7 @@ class TestSentinelTasks:
                 )
             ]
         )
-        # Attaching input sceneid to the mock as property
-        type(mock_activity_history.activity).sceneid = input_args['sceneid']
-
-        # Mocking find RadcorActivityHistory
-        query_property.return_value.filter.return_value.first.return_value = mock_activity_history
+        TestSentinelTasks._mock_query_activity(input_args['sceneid'], query_property, mock_activity_history)
 
         # When ordering a product from ONDA Catalogue, it requires around
         # twenty minutes to be Online. In this way, a Retry is scheduled
@@ -188,17 +173,62 @@ class TestSentinelTasks:
 
         input_args = self.create_activity()
 
-        # Attaching input sceneid to the mock as property
-        type(mock_activity_history.activity).sceneid = input_args['sceneid']
-
-        # Assuming that when call sleep, raise error
+        # Assuming that when call sleep, raise error in order to
+        # interrupt loop
         mock_time.side_effect = RuntimeError('')
-
-        # Mocking find RadcorActivityHistory
-        query_property.return_value.filter.return_value.first.return_value = mock_activity_history
+        TestSentinelTasks._mock_query_activity(input_args['sceneid'], query_property, mock_activity_history)
 
         with pytest.raises(RuntimeError):
             download_sentinel(input_args)
 
         # ensure user is called
         mock_time.assert_any_call(5)
+
+
+class TestSentinelCorrection:
+    """Test sentinel surface reflectance correction."""
+
+    @staticmethod
+    def correction_activity():
+        activity = TestSentinelTasks.create_activity('correctionS2')
+        activity['args']['file'] = '{}2000-01/{}.SAFE'.format(activity['args']['file'], activity['sceneid'])
+
+        return activity
+
+    @patch('requests.get')
+    @patch('pathlib.Path.mkdir')
+    @patch('bdc_db.models.base_sql.BaseModel.query')
+    def test_correction_sentinel(self, query_property, mock_path, mock_get, mock_activity_history):
+        activity = TestSentinelCorrection.correction_activity()
+
+        scene_id_without_processing = 'S2A_MSIL2A_20000101T000000_N9999_R000_T00AAA'
+
+        expected_file_l2 = '/tmp/Repository/Archive/S2_MSI/2000-01/{}'.format(scene_id_without_processing)
+
+        TestSentinelTasks._mock_query_activity(activity['sceneid'], query_property, mock_activity_history)
+        type(mock_get.return_value).status_code = 200
+        type(mock_get.return_value).content = '{"status": "SUCCESS"}'
+
+        res = atm_correction(activity)
+
+        mock_path.assert_called()
+        mock_get.assert_called()
+        assert res['activity_type'] == 'publishS2'
+        assert res['args']['file'].endswith('.SAFE')
+        assert expected_file_l2 in res['args']['file']
+
+    @patch('shutil.rmtree')
+    @patch('requests.get')
+    @patch('pathlib.Path.mkdir')
+    @patch('bdc_db.models.base_sql.BaseModel.query')
+    def test_correction_sentinel_error(self, query_property, mock_path, mock_get, mock_rmtree, mock_activity_history):
+        activity = TestSentinelCorrection.correction_activity()
+
+        TestSentinelTasks._mock_query_activity(activity['sceneid'], query_property, mock_activity_history)
+        type(mock_get.return_value).status_code = 400
+        type(mock_get.return_value).content = '{"status": "ERROR"}'
+
+        with pytest.raises(RuntimeError):
+            atm_correction(activity)
+
+        mock_rmtree.assert_called()

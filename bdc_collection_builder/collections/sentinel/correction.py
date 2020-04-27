@@ -16,27 +16,13 @@ import shutil
 import time
 from datetime import datetime
 from pathlib import Path
-from shutil import rmtree
 from json import loads as json_parser
 
 # 3rdparty
-from requests import get as resource_get
+import requests
 
 # Builder
 from bdc_collection_builder.config import Config
-
-
-def search_recent_sen2cor280(safeL2Afull):
-    """Search recent .SAFE folder from Sentinel.
-
-    Args:
-        safeL2Afull - Path to the folder where .SAFE files generated.
-    """
-    safe = safeL2Afull.replace(os.path.basename(safeL2Afull).split('_')[3], 'N9999')
-    safe_pattern = '_'.join(os.path.basename(safe).split('_')[0:-1])
-    dirname = os.path.dirname(safeL2Afull)
-    dirs_L2 = [os.path.join(dirname,d) for d in os.listdir(dirname) if re.match('^{}.*SAFE$'.format(safe_pattern), d)]
-    return dirs_L2
 
 
 def correction_sen2cor255(scene):
@@ -49,7 +35,7 @@ def correction_sen2cor255(scene):
     if not os.path.exists(safeL2Afull) or valid == False:
         # Send scene to the sen2cor service
 
-        req = resource_get('{}/sen2cor'.format(Config.SEN2COR_URL), params=scene)
+        req = requests.get('{}/sen2cor'.format(Config.SEN2COR_URL), params=scene)
         # Ensure the request has been successfully
         assert req.status_code == 200
 
@@ -80,19 +66,18 @@ def correction_sen2cor280(scene):
     output_dir = Config.DATA_DIR / Path('Repository/Archive/S2_MSI/{}/{}_{}.SAFE'.format(sensing_date.strftime('%Y-%m'), output_dir,
                                                                        processing_date.strftime('%Y%m%dT%H%M%S')))
 
-    os.makedirs(str(output_dir), exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     logging.info('Using outputdir {}'.format(str(output_dir)))
     scene['output_dir'] = str(output_dir)
 
     # Send scene to the sen2cor service
-    req = resource_get('{}/sen2cor'.format(Config.SEN2COR_URL), params=scene)
+    req = requests.get('{}/sen2cor'.format(Config.SEN2COR_URL), params=scene)
 
     result = json_parser(req.content)
 
     if req.status_code != 200 and result and result.get('status') == 'ERROR':
-        rmtree(str(output_dir))
+        shutil.rmtree(str(output_dir))
         raise RuntimeError('Error in sen2cor execution')
 
     return str(output_dir)
