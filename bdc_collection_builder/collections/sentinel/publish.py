@@ -258,33 +258,3 @@ def generate_vi(identifier, productdir, files):
 
     if not is_valid_tif(ndvi_name) or not is_valid_tif(evi_name):
         raise RuntimeError('Not Valid Vegetation index file')
-
-
-def compute_cloud_cover(raster):
-    """Label Classification.
-
-    0      NO_DATA
-    1      SATURATED_OR_DEFECTIVE
-    2      DARK_AREA_PIXELS
-    3      CLOUD_SHADOWS
-    4      VEGETATION
-    5      BARE_SOILS
-    6      WATER
-    7      CLOUD_LOW_PROBABILITY
-    8      CLOUD_MEDIUM_PROBABILITY
-    9      CLOUD_HIGH_PROBABILITY
-    10     THIN_CIRRUS
-    11     SNOW
-    """
-    unique, counts = numpy.unique(raster, return_counts=True)
-    clear = 0.
-    cloud = 0.
-    for i in range(0, unique.shape[0]):
-        if unique[i] == 0:
-            continue
-        elif unique[i] in [1, 2, 3, 8, 9, 10]:
-            cloud += float(counts[i])
-        else:
-            clear += float(counts[i])
-
-    return int(round(100. * cloud / (clear + cloud), 0))
