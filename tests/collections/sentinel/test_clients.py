@@ -5,11 +5,9 @@ from bdc_collection_builder.collections.sentinel.clients import UserClients
 from bdc_collection_builder.utils import initialize_factories, finalize_factories
 
 
-DEFAULT_SECRETS = '''{
-    "sentinel": {
-        "user": {"password": "pass", "count": 1}
-    }
-}'''
+DEFAULT_SECRETS = {
+    "user": {"password": "pass", "count": 0}
+}
 
 
 def setup_module():
@@ -22,9 +20,10 @@ def teardown_module():
 
 class TestSentinelClients:
     @pytest.mark.parametrize('exists', [True])
-    def test_get_available_user(self, mock_os_path, mock_open):
-        mock_open.return_value.__enter__.return_value.read.return_value = DEFAULT_SECRETS
+    def test_get_available_user(self, mock_os_path):
         clients = UserClients()
+        clients._users = DEFAULT_SECRETS
+        clients.initialize()
 
         user = clients.use()
 
@@ -32,10 +31,10 @@ class TestSentinelClients:
         assert user.username == 'user' and user.password == 'pass'
 
     @pytest.mark.parametrize('exists', [True])
-    def test_get_user_none(self, mock_os_path, mock_open):
-        mock_open.return_value.__enter__.return_value.read.return_value = DEFAULT_SECRETS
-
+    def test_get_user_none(self, mock_os_path):
         clients = UserClients()
+        clients._users = DEFAULT_SECRETS
+        clients.initialize()
 
         # Sentinel user do two-requests max
         user = clients.use()

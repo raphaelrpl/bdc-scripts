@@ -1,8 +1,10 @@
+# Python Native
 from unittest.mock import MagicMock, Mock, PropertyMock, patch, call, create_autospec
+# 3rdparty
+import numpy
 import pytest
 from celery.exceptions import Retry
 from requests.exceptions import HTTPError
-
 # Initialize Celery worker
 from bdc_db.models import Band
 import bdc_collection_builder.celery.worker
@@ -261,19 +263,20 @@ class TestSentinelPublish:
         return [(path_prefix, [], file_bands)]
 
     @staticmethod
-    def _mock_data_set(mock_gdal):
-        import numpy
-
+    def _mock_data_set(mock_gdal, array=None):
         data_set = MagicMock()
 
-        fake_array = numpy.ones((10980, 10980), dtype=numpy.uint16)
+        fake_array = array
+
+        if fake_array is None:
+            fake_array = numpy.ones((10980, 10980), dtype=numpy.uint16)
 
         band_mock = MagicMock()
         band_mock.ReadAsArray.return_value = fake_array
         band_mock.GetBlockSize.return_value = 256, 256
 
-        type(data_set).RasterXSize = 10980
-        type(data_set).RasterYSize = 10980
+        type(data_set).RasterXSize = fake_array.shape[0]  # 10980
+        type(data_set).RasterYSize = fake_array.shape[1]  # 10980
         data_set.GetRasterBand = MagicMock(return_value=band_mock)
 
         return data_set
@@ -321,6 +324,7 @@ class TestSentinelPublish:
         mock_qlook.assert_called()
 
         assert res['activity_type'] == 'uploadS2'
+        # TODO: Validate assets model mock
 
         for band, definition in res['args']['assets'].items():
             prefix = '/Repository/Archive/S2TOA/2000-01/{}.SAFE/T00AAA'.format(activity['sceneid'])
@@ -357,8 +361,27 @@ class TestSentinelPublish:
     def test_refresh_view_sr_when_enabled(self):
         assert False
 
-    def test_raise_error_when_vegetation_index_invalid(self):
-        assert False
+    @pytest.mark.parametrize('created', [False])
+    @patch('bdc_db.models.base_sql.BaseModel.query')
+    @patch('bdc_collection_builder.collections.sentinel.publish.db')
+    @patch('bdc_collection_builder.collections.utils.gdal')
+    @patch('os.walk')
+    @patch('os.makedirs')
+    def test_raise_error_when_vegetation_index_invalid(self, mock_os_mkdir, mock_os_walk, mock_gdal, mock_db, query_property, mock_get_or_create, mock_activity_history):
+        activity = TestSentinelPublish.toa_activity()
+        # Mocking Activity Creation
+        TestSentinelTasks._mock_query_activity(activity['sceneid'], query_property, mock_activity_history)
+
+        mock_item, _ = mock_get_or_create.return_value
+        type(mock_item).collection_id = activity['collection_id']
+
+        invalid_array = numpy.zeros((2048, 2048), dtype=numpy.uint16)
+
+        mock_os_walk.return_value = TestSentinelPublish.get_jp2_files()
+        mock_gdal.Open.return_value = TestSentinelPublish._mock_data_set(mock_gdal, invalid_array)
+
+        with pytest.raises(RuntimeError, match='Not Valid Vegetation index file') as exception:
+            publish_sentinel(activity)
 
     def test_do_not_publish_invalid_tif(self):
         assert False
