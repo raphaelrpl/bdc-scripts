@@ -269,7 +269,7 @@ class TestSentinelPublish:
         fake_array = array
 
         if fake_array is None:
-            fake_array = numpy.ones((10980, 10980), dtype=numpy.uint16)
+            fake_array = numpy.ones((2048, 2048), dtype=numpy.uint16)
 
         band_mock = MagicMock()
         band_mock.ReadAsArray.return_value = fake_array
@@ -383,5 +383,37 @@ class TestSentinelPublish:
         with pytest.raises(RuntimeError, match='Not Valid Vegetation index file') as exception:
             publish_sentinel(activity)
 
-    def test_do_not_publish_invalid_tif(self):
-        assert False
+    @pytest.mark.parametrize('created', [False])
+    @patch('bdc_db.models.base_sql.BaseModel.query')
+    @patch('bdc_collection_builder.collections.sentinel.publish.db')
+    @patch('bdc_collection_builder.collections.utils.gdal')
+    @patch('os.walk')
+    @patch('os.makedirs')
+    def test_do_not_publish_invalid_tif(self, mock_os_mkdir, mock_os_walk, mock_gdal, mock_db, query_property, mock_get_or_create, mock_activity_history):
+        activity = TestSentinelPublish.toa_activity()
+        # Mocking Activity Creation
+        TestSentinelTasks._mock_query_activity(activity['sceneid'], query_property, mock_activity_history)
+
+        mock_item, _ = mock_get_or_create.return_value
+        type(mock_item).collection_id = activity['collection_id']
+
+        invalid_array = numpy.zeros((2048, 2048), dtype=numpy.uint16)
+
+        mock_os_walk.return_value = TestSentinelPublish.get_jp2_files()
+        mock_data_set = TestSentinelPublish._mock_data_set(mock_gdal)
+
+        invalid_data_set = TestSentinelPublish._mock_data_set(mock_gdal, invalid_array)
+
+        mock_gdal.Open.side_effect = [
+            mock_data_set, # VegetationIndex red
+            mock_data_set, # VegetationIndex nir
+            mock_data_set, # VegetationIndex blue
+            mock_data_set, # NDVI Validation
+            mock_data_set, # EVI Validation
+            mock_data_set, # COG File valid
+            invalid_data_set # Validate COG (Invalid)
+        ]
+
+        # Exception must be "Not Valid PATH/to/file.tif"
+        with pytest.raises(RuntimeError, match='Not Valid .*\.tif$') as exception:
+            publish_sentinel(activity)
