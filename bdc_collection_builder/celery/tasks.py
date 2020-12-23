@@ -12,6 +12,7 @@ import logging
 import os
 import shutil
 import subprocess
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -19,14 +20,16 @@ from tempfile import TemporaryDirectory
 from bdc_catalog.models import Provider, Item, Collection
 from bdc_collectors.base import BaseCollection
 from bdc_collectors.exceptions import DataOfflineError
-from celery import current_app, current_task
+from celery import chain, current_app, current_task, group
 from celery.backends.database import Task
 from flask import current_app as flask_app
 
-from ..collections.models import RadcorActivityHistory, RadcorActivity
+from ..collections.dispatch import create_activity, create_activity_definition
+from ..collections.models import RadcorActivityHistory, RadcorActivity, PeriodicTask
 from ..collections.utils import get_or_create_model, is_valid_compressed_file, post_processing
 from ..config import Config
 from .publish import publish_collection, get_item_path
+from ..forms import RadcorActivityForm
 
 
 def create_execution(activity):
@@ -156,6 +159,8 @@ def download(activity: dict, **kwargs):
     download_file = data_collection.compressed_file(collection)
 
     has_compressed_file = download_file is not None
+
+    # TODO: Check for item with sceneid (name)
 
     # For files that does not have compressed file (Single file/folder), use native path
     if download_file is None:
@@ -438,3 +443,101 @@ def harmonization(activity: dict, collection_id=None, **kwargs):
     activity['args']['file'] = target_dir
 
     return activity
+
+
+@current_app.task(queue='periodic-tasks')
+def check_download_periodic(periodic_id: int):
+    collector_extension = flask_app.extensions['bdc:collector']
+
+    periodic_task: PeriodicTask = PeriodicTask.query().filter(PeriodicTask.id == periodic_id).first()
+
+    if periodic_task is None:
+        raise RuntimeError(f'Periodic task {periodic_id} not found.')
+
+    parameters = deepcopy(periodic_task.args)
+
+    catalog = parameters.pop('catalog')
+    dataset = parameters.pop('dataset')
+    collection_id = parameters.pop('collection_id')
+
+    logging.info(f'Starting Periodic Tasks for Downloading - Catalog={catalog}, dataset={dataset}')
+
+    db_provider = Provider.query().filter(Provider.name == catalog).first()
+
+    if db_provider is None:
+        raise RuntimeError(f'Catalog {catalog} not found.')
+
+    # Use parallel flag for providers which has number maximum of connections per client (Sentinel-Hub only)
+    provider_class = collector_extension.get_provider(catalog)
+
+    if isinstance(db_provider.credentials, dict):
+        provider = provider_class(**db_provider.credentials)
+    else:
+        provider = provider_class(db_provider.credentials)
+
+    tiles = parameters.pop('tiles', [])
+
+    now = datetime.today()
+
+    start_from = periodic_task.start_from
+
+    # When there is no start from, use start current day
+    if start_from is None:
+        start_from = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    end_day = now.replace(hour=23, minute=59, second=59)
+
+    logging.info(f'Using start_date={start_from}, end_date={end_day}')
+
+    periodic_task.start_from = start_from
+
+    try:
+        db_scenes_today = Item.query().filter(
+            Collection.id == collection_id,
+            Item.start_date >= start_from,
+            Item.end_date <= end_day
+        ).order_by(Item.start_date).all()
+
+        db_scenes_today = {item.name: item.id for item in db_scenes_today}
+
+        tasks = []
+        total_scenes = 0
+
+        serializer = RadcorActivityForm()
+
+        for tile in tiles:
+            kwargs = deepcopy(parameters)
+            kwargs['tile'] = f'{tile}'
+            kwargs['start_date'] = start_from
+            kwargs['end_date'] = end_day
+
+            scenes = provider.search(dataset, **kwargs)
+
+            for scene in scenes:
+                if scene.scene_id in db_scenes_today:
+                    continue
+
+                meta = dict(periodic_task.args)
+
+                definition_download = create_activity_definition(activity_type='download', scene=scene, **meta)
+                definition_publish = create_activity_definition(activity_type='publish', scene=scene, **meta)
+                download_activity, _ = create_activity(definition_download, parent=None)
+                publish_activity, _ = create_activity(definition_publish, parent=download_activity)
+
+                task = chain(
+                    download.s(serializer.dump(download_activity)) | publish.s(serializer.dump(publish_activity))
+                )
+
+                tasks.append(task)
+
+            total_scenes += len(scenes)
+
+            if tasks:
+                group(tasks).apply_async()
+
+        logging.info(f'Total {total_scenes} scenes found, {len(tasks)} not done and were triggered.')
+    except Exception as error:
+        logging.error(str(error), exc_info=True)
+    finally:
+        periodic_task.start_from = now
+        periodic_task.save()

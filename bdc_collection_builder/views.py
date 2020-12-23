@@ -15,7 +15,7 @@ from werkzeug.exceptions import RequestURITooLarge
 # Builder
 from .celery.utils import list_pending_tasks, list_running_tasks
 from .controller import RadcorBusiness
-from .forms import RadcorActivityForm, SearchImageForm
+from .forms import RadcorActivityForm, SearchImageForm, PeriodicTaskForm
 
 bp = Blueprint('radcor', import_name=__name__, url_prefix='/api')
 
@@ -161,3 +161,26 @@ def count_failed_activities():
     """List count of failed tasks."""
     result = RadcorBusiness.get_unsuccessfully_activities()
     return result
+
+
+@bp.route('/radcor/periodic-tasks', methods=('GET', ))
+def list_period_tasks():
+    tasks = RadcorBusiness.list_periodic_tasks()
+
+    return tasks
+
+
+@bp.route('/radcor/periodic-tasks', methods=['POST'])
+def create_period_tasks():
+    args = request.get_json()
+
+    form = PeriodicTaskForm()
+
+    errors = form.validate(args)
+
+    if errors:
+        return errors
+
+    tasks = RadcorBusiness.create_periodic_task(**args)
+
+    return tasks

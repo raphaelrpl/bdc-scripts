@@ -21,11 +21,11 @@ from sqlalchemy import Date, func
 from werkzeug.exceptions import BadRequest, abort
 
 # Builder
-from .celery.tasks import correction, download, harmonization, post, publish
-from .collections.models import (ActivitySRC, RadcorActivity,
-                                 RadcorActivityHistory, db)
-from .collections.utils import get_or_create_model
-from .forms import RadcorActivityForm, SimpleActivityForm
+from .celery.tasks import correction, download, harmonization, post, publish, check_download_periodic
+from .collections.dispatch import create_activity, create_activity_definition
+from .collections.models import (RadcorActivity,
+                                 RadcorActivityHistory, db, PeriodicTask)
+from .forms import RadcorActivityForm, SimpleActivityForm, PeriodicTaskForm
 
 
 class RadcorBusiness:
@@ -81,34 +81,6 @@ class RadcorBusiness:
             serialized_activities.append(serializer.dump(activity))
 
         return serialized_activities
-
-    @classmethod
-    def create_activity(cls, activity, parent=None):
-        """Persist an activity on database."""
-        where = dict(
-            sceneid=activity['sceneid'],
-            activity_type=activity['activity_type'],
-            collection_id=activity['collection_id']
-        )
-
-        model, created = get_or_create_model(RadcorActivity, defaults=activity, **where)
-
-        if created:
-            db.session.add(model)
-
-        if parent:
-            relation_defaults = dict(
-                activity=model,
-                parent=parent
-            )
-
-            _relation, _created = get_or_create_model(
-                ActivitySRC,
-                defaults=relation_defaults,
-                **relation_defaults
-            )
-
-        return model, created
 
     @classmethod
     def dispatch(cls, activity: RadcorActivity, skip_collection_id=None):
@@ -256,12 +228,12 @@ class RadcorBusiness:
                 """Create task dispatcher recursive."""
                 collection_id = collections_map[task['collection']]
                 # Create activity definition example
-                activity = cls._activity_definition(collection_id, task['type'], scene, **task['args'])
+                activity = create_activity_definition(collection_id, task['type'], scene, **task['args'])
                 activity['args'].update(dict(catalog=args['catalog'], dataset=args['dataset']))
 
                 _task = cls._task_definition(task['type'])
                 # Try to create activity in database and the parent if there is.
-                instance, created = cls.create_activity(activity, parent)
+                instance, created = create_activity(activity, parent)
 
                 # When activity already exists and force is not set, skips to avoid collect multiple times
                 if not created and not force:
@@ -424,3 +396,22 @@ class RadcorBusiness:
             ) \
             SELECT count(*) FROM failed_tasks").first()
         return {"result": result.count}
+
+    @classmethod
+    def create_periodic_task(cls, name: str, crontab: dict, args: dict, **kwargs):
+        if args.get('catalog') is None or args.get('dataset') is None or args.get('collection_id') is None:
+            abort(400, 'Missing catalog or dataset or collection_id in arguments.')
+
+        model = PeriodicTask()
+        model.name = name
+        model.crontab = crontab
+        model.args = args
+        model.save()
+
+        return dict(ok=True, name=name)
+
+    @classmethod
+    def list_periodic_tasks(cls, enabled=True):
+        tasks = PeriodicTask.query().filter(PeriodicTask.enabled.is_(enabled)).all()
+
+        return PeriodicTaskForm().dumps(tasks, many=True)

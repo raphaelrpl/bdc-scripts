@@ -17,7 +17,7 @@ from marshmallow.validate import OneOf
 from marshmallow_sqlalchemy import ModelSchema
 
 # Builder
-from .collections.models import RadcorActivity, RadcorActivityHistory
+from .collections.models import RadcorActivity, RadcorActivityHistory, PeriodicTask
 
 
 class TaskSchema(Schema):
@@ -156,3 +156,12 @@ class SearchImageForm(Schema):
 
             if s > n:
                 raise ValidationError('Ymin is greater than YMax')
+
+
+class PeriodicTaskForm(ModelSchema):
+    class Meta:
+        """Define internal model handling."""
+
+        model = PeriodicTask
+        sqla_session = db.session
+        exclude = ('id', )

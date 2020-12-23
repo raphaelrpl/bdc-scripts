@@ -11,7 +11,9 @@
 from bdc_catalog.models import Collection
 from bdc_catalog.models.base_sql import BaseModel, db
 from celery.backends.database import Task
-from sqlalchemy import ARRAY, Column, DateTime, Integer, ForeignKey, JSON, String, PrimaryKeyConstraint, UniqueConstraint
+from sqlalchemy import (ARRAY, Boolean, Column, DateTime, Integer,
+                        ForeignKey, JSON, String, PrimaryKeyConstraint,
+                        TIMESTAMP, Text, UniqueConstraint, Index)
 from sqlalchemy.orm import relationship
 
 from ..config import Config
@@ -99,3 +101,24 @@ class RadcorActivityHistory(BaseModel):
     def get_by_task_id(cls, task_id: str):
         """Retrieve a task execution from celery task id."""
         return cls.query().filter(cls.task.has(task_id=task_id)).one()
+
+
+# TODO: Create a scheduler for model PeriodicTask that integrates with db, similar django-celery-beat
+class PeriodicTask(BaseModel):
+    __tablename__ = 'periodic_tasks'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(), nullable=False, unique=True)
+    description = Column(Text())
+    crontab = Column(JSON, nullable=False)
+    queue = Column(String(), nullable=False, default='periodic')
+    priority = Column(Integer())
+    enabled = Column(Boolean(), nullable=False, default=True)
+    start_from = Column(TIMESTAMP(timezone=True), nullable=True)
+    expire_at = Column(TIMESTAMP(timezone=True))
+    args = Column(JSON, nullable=False, default=dict())
+
+    __table_args__ = (
+        Index(None, name),
+        dict(schema='collection_builder'),
+    )
